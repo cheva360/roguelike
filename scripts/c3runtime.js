@@ -4627,7 +4627,6 @@ map.get(this)._SetTooltip(t)}get tooltip(){return map.get(this)._GetTooltip()}se
             this.sdkType = this.GetSdkType();
             this.runtime = inst.GetRuntime();
             this.renderer = this.runtime.GetCanvasManager().GetRenderer();
-            this.isWebGPU = this.renderer.IsWebGPU();
             this.uid = this.GetInstance().GetUID();
             this.loaded = false;
             this.animationTime = 0;
@@ -4692,8 +4691,6 @@ map.get(this)._SetTooltip(t)}get tooltip(){return map.get(this)._GetTooltip()}se
             this.blendMode = 0
             this.quaternion = [0,0,0,1]
             this.enableQuaternion = false
-            this.spriteTextures = new Map()
-            this.fragLight = false
 
             if (properties)
             {
@@ -4892,6 +4889,7 @@ map.get(this)._SetTooltip(t)}get tooltip(){return map.get(this)._GetTooltip()}se
             }
 
             const tempQuad = C3.New(C3.Quad);
+
             if (this.loaded && this.gltfPath != 'path')
             {
                 this.gltf.render(renderer, x, y, z, tempQuad, whiteTextureOwner.whiteTexture, wi.GetPremultipliedColor(), textures, this.instanceTexture);
@@ -5298,11 +5296,6 @@ map.get(this)._SetTooltip(t)}get tooltip(){return map.get(this)._GetTooltip()}se
             this.renderOnce = true;
         }
 
-        _enableFragLight(enable) {
-            this.fragLight= enable
-        }
-
-
         _setQuaternion(quaternion,x,y,z) {
             // try catch JSON parse string quaternion, if not a string, ignore, if not a valid quaternion, ignore with warning
             try {
@@ -5617,18 +5610,6 @@ map.get(this)._SetTooltip(t)}get tooltip(){return map.get(this)._GetTooltip()}se
             if (typeof imageBitmap.close === "function") imageBitmap.close();
         },
 
-        async LoadMaterialFromSprite(materialUID, materialName) {
-            if (!this.loaded) return;
-            if (!materialName || !materialUID) return;
-            this.spriteTextures.set(materialName, materialUID)
-        },
-
-        async UnloadMaterialFromSprite(materialName) {
-            if (!this.loaded) return;
-            if (!materialName) return;
-            this.spriteTextures.delete(materialName)
-        },
-
         SetMeshMaterial(nodeName, materialName) {
             const meshName = this.gltf.nodeMeshMap[nodeName];
             if (!meshName) {
@@ -5899,11 +5880,7 @@ map.get(this)._SetTooltip(t)}get tooltip(){return map.get(this)._GetTooltip()}se
 
         EnableQuaternion(enable) {
             this._enableQuaternion(enable);
-        },
-        EnableFragLight(enable) {
-            this._enableFragLight(enable);
         }
-
     }
 }
 }

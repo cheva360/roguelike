@@ -123,11 +123,9 @@ class GltfModel
         const finalColor = vec4.create();
 
         const tmpModelView = mat4.create();
-        const tmpProjection = mat4.create();
         const modelRotate = mat4.create();
         if (!this.inst.isEditor) {
             mat4.copy(tmpModelView, renderer._matMV);
-            if (this.inst.fragLight && !this.inst.isWebGPU) mat4.copy(tmpProjection, renderer._matP);
             const xAngle = this.inst.xAngle;
             const yAngle = this.inst.yAngle;
             const zAngle = this.inst.zAngle;
@@ -147,13 +145,7 @@ class GltfModel
             // from rotationtranslationscaleorigin
             mat4.copy(this.modelRotate, modelRotate);
             mat4.multiply(modelRotate, tmpModelView, modelRotate);
-            if (this.inst.fragLight) mat4.multiply(modelRotate, renderer._matP, modelRotate);
-            if (!(this.inst.fragLight && this.inst.isWebGPU)) renderer.SetModelViewMatrix(modelRotate);
-            if (this.inst.fragLight && !this.inst.isWebGPU) {
-                const encodedModelRotate = mat4.clone(this.modelRotate);
-                encodedModelRotate[3] = encodedModelRotate[12] + 11000000
-                renderer.SetProjectionMatrix(encodedModelRotate);
-            }
+            renderer.SetModelViewMatrix(modelRotate);
         }
 
         // Default color
@@ -179,19 +171,12 @@ class GltfModel
             const rotateMaterial = materialsModify.has(material?.name) && materialsModify.get(material?.name)?.rotateUV;
             const lightUpdate = this.inst.lightUpdate || (drawLights.length == 0)
             const vertexScale = this.inst.vertexScale
-            let isSpriteTexture = false
-            let rWidth = null
-            let rHeight = null
-            let rOffsetX = null
-            let rOffsetY = null
-            const imageInfo = !this.inst.instanceTexture ? null : this.inst.isEditor ? null : this.inst._objectClass.GetImageInfo();
+            const imageInfo = !this.inst.instanceTexture || this.inst.isEditor ? null : this.inst._objectClass.GetImageInfo();
             const textureRect = !this.inst.instanceTexture ? null : this.inst.isEditor ? this.inst.GetTexRect() : imageInfo.GetTexRect();
-            if (this.inst.instanceTexture) {
-                rWidth = textureRect.width();
-                rHeight = textureRect.height();
-                rOffsetX = textureRect.getLeft();
-                rOffsetY = textureRect.getTop();
-            }
+            const rWidth = !this.inst.instanceTexture ? null : textureRect.width();
+            const rHeight = !this.inst.instanceTexture ? null : textureRect.height();
+            const rOffsetX = !this.inst.instanceTexture ? null : textureRect.getLeft();
+            const rOffsetY = !this.inst.instanceTexture ? null :textureRect.getTop();
 
             // Check if the map this.inst.materialsModify contains the key material.name
             // If it does, then we need to offset the UVs
@@ -220,22 +205,7 @@ class GltfModel
                         currentTexture = whiteTexture;
                     }
                 } else {
-                    let texture = textures[material.name];
-                    if (this.inst.spriteTextures.has(material.name)) {
-                        const uid = this.inst.spriteTextures.get(material.name)
-                        const spriteInst = this._runtime.GetInstanceByUID(uid)
-                        if (spriteInst) {
-                            isSpriteTexture = true
-                            texture = spriteInst.GetSdkInstance().GetTexture();
-                            const texQuad = spriteInst.GetSdkInstance().GetTexQuad();
-                            rOffsetX = texQuad.getTlx();
-                            rOffsetY = texQuad.getTly();
-                            rWidth = texQuad.getTrx() - texQuad.getTlx();
-                            rHeight = texQuad.getBly() - texQuad.getTly();
-                        } else {
-                            console.warn("Sprite texture not found from uid, for 3Dobject uid", uid, this.inst.uid)
-                        }
-                    }
+                    const texture = textures[material.name];
                     // If texture is not loaded, skip rendering
                     if (!texture) continue;
                     if (texture != currentTexture) {
@@ -260,16 +230,9 @@ class GltfModel
             if (lightUpdate) {
                 drawLights.length = 0
             }
-            let xVerts
-            if (this.inst.fragLight && this.inst.isWebGPU) {
-                xVerts = this.transformDrawVerts(drawVerts, this.modelRotate)
-            } else {
-                xVerts = drawVerts
-            }
-
             for (let ii=0; ii<drawVerts.length; ii++)
             {
-                let v = xVerts[ii];
+                let v = drawVerts[ii];
                 let uv = drawUVs[ii];
                 let ind = drawIndices[ii];
 
@@ -336,7 +299,7 @@ class GltfModel
                                 uv[ind[i*3+2]*2+0], uv[ind[i*3+2]*2+1]
                                 );
                         }
-                        if (this.inst.instanceTexture || isSpriteTexture) {
+                        if (this.inst.instanceTexture) {
                             tempQuad.setTlx(tempQuad.getTlx() * rWidth + rOffsetX);
                             tempQuad.setTly(tempQuad.getTly() * rHeight + rOffsetY);
                             tempQuad.setTrx(tempQuad.getTrx() * rWidth + rOffsetX);
@@ -484,9 +447,8 @@ class GltfModel
             }
         }
         // Restore modelview matrix
-        if (!(this.inst.isEditor || this.inst.cpuXform) && !(this.inst.fragLight && this.inst.isWebGPU)) {
+        if (!(this.inst.isEditor || this.inst.cpuXform)) {
             renderer.SetModelViewMatrix(tmpModelView);
-            if (this.inst.fragLight && !this.inst.isWebGPU) renderer.SetProjectionMatrix(tmpProjection);
         }
         this.inst.totalTriangles = totalTriangles;
     }
@@ -854,33 +816,7 @@ class GltfModel
         }
     }
 
-    transformDrawVerts(drawVerts, modelScaleRotate) {
-        console.log('transformDrawVerts')
-        const vec3 = globalThis.glMatrix3D.vec3;
-        // Transform drawVerts in place
-        const xformVerts = [];
-        const vOut = vec3.create();
-        for (let i = 0; i < drawVerts.length; i++) {
-            const v = drawVerts[i];
-            const xform = [];
-            for (let j = 0; j < v.length; j += 3) {
-                const x = v[j];
-                const y = v[j + 1];
-                const z = v[j + 2];
-                vec3.set(vOut, x, y, z);
-                
-                vec3.transformMat4(vOut, vOut, modelScaleRotate);
-                // v[j] = vOut[0];
-                // v[j + 1] = vOut[1];
-                // v[j + 2] = vOut[2];
-                xform.push(vOut[0], vOut[1], vOut[2]);
-            }
-            xformVerts.push(xform);
-        }
-        return xformVerts;
-    }
-
-    // sends a list of animation names
+    // sends a list of animation names to c2.
     getAnimationNames()
     {
         const gltf = this.gltfData;
