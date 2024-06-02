@@ -4627,6 +4627,7 @@ map.get(this)._SetTooltip(t)}get tooltip(){return map.get(this)._GetTooltip()}se
             this.sdkType = this.GetSdkType();
             this.runtime = inst.GetRuntime();
             this.renderer = this.runtime.GetCanvasManager().GetRenderer();
+            this.isWebGPU = this.renderer.IsWebGPU();
             this.uid = this.GetInstance().GetUID();
             this.loaded = false;
             this.animationTime = 0;
@@ -4691,6 +4692,8 @@ map.get(this)._SetTooltip(t)}get tooltip(){return map.get(this)._GetTooltip()}se
             this.blendMode = 0
             this.quaternion = [0,0,0,1]
             this.enableQuaternion = false
+            this.spriteTextures = new Map()
+            this.fragLight = false
 
             if (properties)
             {
@@ -4889,7 +4892,6 @@ map.get(this)._SetTooltip(t)}get tooltip(){return map.get(this)._GetTooltip()}se
             }
 
             const tempQuad = C3.New(C3.Quad);
-
             if (this.loaded && this.gltfPath != 'path')
             {
                 this.gltf.render(renderer, x, y, z, tempQuad, whiteTextureOwner.whiteTexture, wi.GetPremultipliedColor(), textures, this.instanceTexture);
@@ -5296,6 +5298,11 @@ map.get(this)._SetTooltip(t)}get tooltip(){return map.get(this)._GetTooltip()}se
             this.renderOnce = true;
         }
 
+        _enableFragLight(enable) {
+            this.fragLight= enable
+        }
+
+
         _setQuaternion(quaternion,x,y,z) {
             // try catch JSON parse string quaternion, if not a string, ignore, if not a valid quaternion, ignore with warning
             try {
@@ -5610,6 +5617,18 @@ map.get(this)._SetTooltip(t)}get tooltip(){return map.get(this)._GetTooltip()}se
             if (typeof imageBitmap.close === "function") imageBitmap.close();
         },
 
+        async LoadMaterialFromSprite(materialUID, materialName) {
+            if (!this.loaded) return;
+            if (!materialName || !materialUID) return;
+            this.spriteTextures.set(materialName, materialUID)
+        },
+
+        async UnloadMaterialFromSprite(materialName) {
+            if (!this.loaded) return;
+            if (!materialName) return;
+            this.spriteTextures.delete(materialName)
+        },
+
         SetMeshMaterial(nodeName, materialName) {
             const meshName = this.gltf.nodeMeshMap[nodeName];
             if (!meshName) {
@@ -5880,7 +5899,11 @@ map.get(this)._SetTooltip(t)}get tooltip(){return map.get(this)._GetTooltip()}se
 
         EnableQuaternion(enable) {
             this._enableQuaternion(enable);
+        },
+        EnableFragLight(enable) {
+            this._enableFragLight(enable);
         }
+
     }
 }
 }
@@ -7384,21 +7407,23 @@ self.C3_GetObjectRefTable = function () {
 		C3.Behaviors.Sin,
 		C3.Behaviors.Flash,
 		C3.Plugins.System.Cnds.IsGroupActive,
-		C3.Plugins.PlatformInfo.Cnds.IsOnMobile,
-		C3.Plugins.System.Acts.SetGroupActive,
-		C3.Plugins.Touch.Cnds.OnTouchStart,
-		C3.Plugins.System.Cnds.CompareBoolVar,
+		C3.Plugins.Keyboard.Cnds.OnAnyKey,
 		C3.Plugins.System.Acts.SetBoolVar,
+		C3.Plugins.System.Cnds.CompareBoolVar,
+		C3.Plugins.System.Cnds.TriggerOnce,
+		C3.Plugins.System.Acts.RemoveLayer,
+		C3.Plugins.System.Acts.SetGroupActive,
+		C3.Plugins.System.Acts.SetLayerVisible,
+		C3.Plugins.System.Acts.SetLayerInteractive,
+		C3.Plugins.Touch.Cnds.OnTouchStart,
 		C3.Plugins.Browser.Acts.RequestFullScreen,
 		C3.Plugins.Browser.Acts.LockOrientation,
 		C3.Plugins.Browser.Cnds.IsFullscreen,
-		C3.Plugins.System.Cnds.TriggerOnce,
 		C3.Plugins.Keyboard.Cnds.IsKeyDown,
 		C3.Plugins.Sprite.Cnds.IsBoolInstanceVarSet,
 		C3.Behaviors.EightDir.Cnds.IsEnabled,
 		C3.Behaviors.EightDir.Acts.SimulateControl,
 		C3.Plugins.Sprite.Acts.SetMirrored,
-		C3.Plugins.Keyboard.Cnds.OnAnyKey,
 		C3.Plugins.System.Acts.SetVar,
 		C3.Behaviors.DragnDrop.Cnds.IsDragging,
 		C3.Plugins.Sprite.Acts.SetInstanceVar,
@@ -7468,7 +7493,6 @@ self.C3_GetObjectRefTable = function () {
 		C3.Behaviors.Pin.Acts.PinByProperties,
 		C3.Plugins.Sprite.Acts.ZMoveToObject,
 		C3.Behaviors.EightDir.Acts.SetEnabled,
-		C3.Plugins.System.Acts.SetLayerInteractive,
 		C3.Behaviors.solid.Acts.SetEnabled,
 		C3.Plugins.Sprite.Acts.SetSize,
 		C3.Plugins.Audio.Acts.StopAll,
@@ -7525,7 +7549,6 @@ self.C3_GetObjectRefTable = function () {
 		C3.Plugins.Audio.Acts.FadeVolume,
 		C3.Behaviors.scrollto.Acts.SetEnabled,
 		C3.Plugins.Audio.Cnds.OnEnded,
-		C3.Plugins.System.Acts.SetLayerVisible,
 		C3.Plugins.System.Acts.MoveLayer,
 		C3.Plugins.Sprite.Exps.Count,
 		C3.Plugins.Text.Acts.TypewriterText,
@@ -7719,6 +7742,8 @@ self.C3_JsPropNameTable = [
 	{Family2: 0},
 	{Enemies: 0},
 	{Enemies2: 0},
+	{mobile: 0},
+	{pc: 0},
 	{isFullscreen: 0},
 	{IsDodging: 0},
 	{SwordAngle: 0},
@@ -7985,10 +8010,11 @@ function or(l, r)
 
 self.C3_ExpressionFuncs = [
 		() => "Platforms",
+		() => "MobHUD",
+		() => "Mobile",
 		() => "PC",
 		() => 700,
 		() => 900,
-		() => "Mobile",
 		() => 800,
 		() => 1000,
 		p => {
@@ -8180,7 +8206,6 @@ self.C3_ExpressionFuncs = [
 			return () => n0.ExpBehavior("crack");
 		},
 		() => "Water",
-		() => "MobHUD",
 		() => "fade",
 		p => {
 			const n0 = p._GetNode(0);
